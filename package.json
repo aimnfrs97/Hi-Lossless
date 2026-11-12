@@ -1,6 +1,6 @@
 {
   "name": "bitchord-flac-addon",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "BitChord addon: real lossless FLAC from Internet Archive, verified by reading the FLAC header",
   "type": "module",
   "main": "server.mjs",

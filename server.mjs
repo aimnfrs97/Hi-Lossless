@@ -36,7 +36,7 @@ const EXCLUDE_WORDS = (
   .filter((s) => s && s !== "none");
 
 const MAX_ITEMS = 8; // Internet Archive items looked at per search
-const MAX_TRACKS = 40; // tracks returned per search
+const MAX_TRACKS = 24; // verified tracks returned per search
 const SEARCH_TTL = 5 * 60_000;
 const META_TTL = 30 * 60_000;
 const VERIFY_TTL = 30 * 60_000;
@@ -225,26 +225,46 @@ async function searchTracks(q) {
     }
   });
   if (!scored.length) return [];
-  const need = tokens.length ? tokens.length : 0;
+  const need = tokens.length;
   let kept = scored.filter((s) => s.hits >= need);
   if (!kept.length) kept = scored.filter((s) => s.hits >= Math.ceil(need / 2));
   kept.sort((a, b) => b.hits - a.hits || a.itemRank - b.itemRank);
-  return kept.slice(0, MAX_TRACKS).map(({ t }) => {
-    const { _trackNo, ...clean } = t;
+
+  // Verify the actual FLAC STREAMINFO header; a .flac filename alone is not proof.
+  const candidates = kept.slice(0, MAX_TRACKS).map(({ t }) => t);
+  const verified = [];
+  for (let i = 0; i < candidates.length; i += 4) {
+    const batch = candidates.slice(i, i + 4);
+    const results = await Promise.all(batch.map(async (track) => {
+      const parsed = decodeTrackId(track.id);
+      if (!parsed) return null;
+      const info = await verifyFlac(downloadUrl(parsed.identifier, parsed.file));
+      return info?.ok === true ? track : null;
+    }));
+    verified.push(...results.filter(Boolean));
+  }
+
+  return verified.map((track) => {
+    const { _trackNo, ...clean } = track;
     return Object.fromEntries(Object.entries(clean).filter(([, v]) => v !== undefined && v !== ""));
   });
 }
 
 // ---------- FLAC verification (reads STREAMINFO, only ~64 bytes) ----------
 function parseStreamInfo(b) {
-  // "fLaC" + metadata block header (4) + STREAMINFO (34)
-  if (b.length < 26) return null;
+  // Native FLAC: fLaC marker + 4-byte metadata header + 34-byte STREAMINFO.
+  if (b.length < 42) return null;
   if (!(b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43)) return { ok: false };
+  const blockType = b[4] & 0x7f;
+  const blockLength = (b[5] << 16) | (b[6] << 8) | b[7];
+  if (blockType !== 0 || blockLength !== 34) return { ok: false };
+
   const sampleRate = (b[18] << 12) | (b[19] << 4) | (b[20] >> 4);
   const channels = ((b[20] >> 1) & 7) + 1;
   const bitDepth = (((b[20] & 1) << 4) | (b[21] >> 4)) + 1;
   const totalSamples = (b[21] & 0x0f) * 2 ** 32 + ((b[22] << 24) >>> 0) + (b[23] << 16) + (b[24] << 8) + b[25];
-  const duration = sampleRate ? totalSamples / sampleRate : undefined;
+  if (!sampleRate || sampleRate > 655350 || channels < 1 || channels > 8 || bitDepth < 4 || bitDepth > 32) return { ok: false };
+  const duration = totalSamples ? totalSamples / sampleRate : undefined;
   return { ok: true, sampleRate, channels, bitDepth, duration };
 }
 
@@ -294,6 +314,17 @@ const MANIFEST = {
   resources: ["search", "stream"],
   allowDownloads: ALLOW_DOWNLOADS,
   checkValidLossless: CHECK_VALID_LOSSLESS,
+  settings: [{
+    key: "quality",
+    type: "select",
+    label: "Audio quality",
+    default: "lossless",
+    options: [
+      { value: "lossless", label: "Lossless (FLAC)" },
+      { value: "high", label: "High (FLAC fallback)" },
+      { value: "low", label: "Low (use other sources)" },
+    ],
+  }],
   ...(bitchord ? { bitchordAuth: true } : {}),
 };
 
@@ -373,7 +404,8 @@ async function handle(req, res) {
 
     const mediaUrl = downloadUrl(parsed.identifier, file.name);
     const info = await verifyFlac(mediaUrl);
-    if (info && info.ok === false) return send(res, 404, { error: "not_a_flac" });
+    if (info?.ok === false) return send(res, 404, { error: "not_a_flac" });
+    if (!info?.ok) return send(res, 503, { error: "lossless_verification_unavailable" });
 
     return send(res, 200, {
       url: mediaUrl,

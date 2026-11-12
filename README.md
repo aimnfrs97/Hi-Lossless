@@ -58,3 +58,12 @@ Kalau nak juga:
 - Cuba cari guna nama artis + tajuk dalam English.
 - Test terus: `/search?q=nama`.
 - Log server tunjuk kalau archive.org down.
+
+## Pengesahan Lossless (v1.1.0)
+
+- BitChord kini memaparkan pemilih **Audio quality**: Lossless (FLAC), High (FLAC fallback), dan Low (guna source lain).
+- Carian hanya memulangkan trek yang lulus semakan header FLAC sebenar (marker `fLaC` dan blok STREAMINFO 34-byte).
+- Endpoint stream membuat pengesahan semula sebelum memulangkan URL audio. Jika pengesahan gagal atau tidak dapat dicapai, addon menolak stream supaya audio yang belum disahkan tidak dilabel Lossless.
+- Sample rate dan bit depth dibaca daripada STREAMINFO, bukan diteka daripada nama fail.
+
+**Had penting:** addon ini mencari fail FLAC sebenar di Internet Archive. Ia tidak menukar MP3, AAC, Opus atau audio YouTube menjadi Lossless. Ketersediaan lagu komersial semasa adalah terhad.

@@ -310,7 +310,7 @@ function qualityLabel(info) {
 const MANIFEST = {
   id: ADDON_ID,
   name: ADDON_NAME,
-  version: "1.0.0",
+  version: "1.1.0",
   resources: ["search", "stream"],
   allowDownloads: ALLOW_DOWNLOADS,
   checkValidLossless: CHECK_VALID_LOSSLESS,

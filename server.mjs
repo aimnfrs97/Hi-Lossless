@@ -25,6 +25,15 @@ const BITCHORD_AUTH = process.env.BITCHORD_AUTH === "1";
 const PUBLIC_HOST = (process.env.PUBLIC_HOST || "").trim().toLowerCase();
 // Serve FLAC even when BitChord asks for the LOW (metered) tier? Default: no, let another source answer.
 const SERVE_FLAC_ON_LOW = process.env.SERVE_FLAC_ON_LOW === "1";
+// Skip Internet Archive items whose title / subject / collection contains any of these words.
+// Comma separated, case-insensitive. Set to "none" to turn the filter off.
+const EXCLUDE_WORDS = (
+  process.env.EXCLUDE_WORDS ??
+  "jazz,classical,concert,etree,gratefuldead,symphony,orchestra,opera,live at,live in,live from"
+)
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter((s) => s && s !== "none");
 
 const MAX_ITEMS = 8; // Internet Archive items looked at per search
 const MAX_TRACKS = 40; // tracks returned per search
@@ -97,9 +106,32 @@ function parseLength(v) {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
 }
 
-function cleanTitleFromFile(name) {
+function cleanTitleFromFile(name, identifier = "", album = "") {
   const base = name.split("/").pop().replace(/\.flac$/i, "");
-  return base.replace(/^\s*(?:d\d+)?\s*t?\d{1,3}\s*[-_. ]+\s*/i, "").replace(/_/g, " ").trim() || base;
+  // Files named after the whole item (e.g. "<identifier>_disc1side1"): use the album name + the leftover bit
+  const id = identifier.toLowerCase();
+  if (id && base.toLowerCase().startsWith(id.slice(0, 20))) {
+    const rest = base.slice(identifier.length).replace(/[_\-.]+/g, " ").trim();
+    const label = album || base;
+    return rest ? `${label} (${rest})` : label;
+  }
+  const cleaned = base
+    .replace(/^\s*(?:d\d+)?\s*t?\d{1,3}\s*[-_. ]+\s*/i, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || base;
+}
+
+function isExcluded(meta, identifier) {
+  if (!EXCLUDE_WORDS.length) return false;
+  const m = meta?.metadata ?? {};
+  const hay = [identifier, m.title, m.subject, m.collection]
+    .flat()
+    .filter(Boolean)
+    .join(" | ")
+    .toLowerCase();
+  return EXCLUDE_WORDS.some((w) => hay.includes(w));
 }
 
 const tokenize = (q) =>
@@ -163,7 +195,7 @@ function tracksFromItem(identifier, meta) {
     seen.add(key);
     out.push({
       id: encodeTrackId(identifier, f.name),
-      title: str(f.title) || cleanTitleFromFile(f.name),
+      title: str(f.title) || cleanTitleFromFile(f.name, identifier, str(f.album) || albumName),
       artist: str(f.artist) || str(f.creator) || itemArtist,
       album: str(f.album) || albumName,
       duration: parseLength(f.length),
@@ -185,6 +217,7 @@ async function searchTracks(q) {
   metas.forEach((r, i) => {
     if (r.status !== "fulfilled") return;
     const identifier = items[i].identifier;
+    if (isExcluded(r.value, identifier)) return;
     for (const t of tracksFromItem(identifier, r.value)) {
       const hay = norm(`${t.title} ${t.artist} ${t.album} ${identifier}`);
       const hits = tokens.filter((tok) => hay.includes(tok)).length;

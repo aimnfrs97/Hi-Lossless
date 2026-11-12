@@ -41,6 +41,7 @@ Lepas add, **seret addon ni ke paling atas** dalam senarai Sources supaya dia di
 | `ALLOW_DOWNLOADS` | 1 | `0` = stream sahaja, tak boleh download |
 | `CHECK_VALID_LOSSLESS` | 0 | `1` = guna addon ni hanya bila ada output lossless (wired, USB DAC, LDAC). Android sahaja |
 | `SERVE_FLAC_ON_LOW` | 0 | `1` = bagi FLAC walaupun BitChord minta tier LOW (data terhad) |
+| `EXCLUDE_WORDS` | jazz,classical,concert,etree,gratefuldead,symphony,orchestra,opera,live at,live in,live from | Item Internet Archive yang tajuk/subject/koleksinya ada perkataan ni dilangkau. Asing dengan koma. `none` = matikan penapis |
 | `ADDON_ID` / `ADDON_NAME` | ada | Tukar kalau nak |
 | `BITCHORD_AUTH` | 0 | Lihat bahagian bawah |
 
